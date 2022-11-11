@@ -17,10 +17,10 @@ def read_file_save(ifile):
     nvars = {}
     n = NextsimBin(ifile)
 
-    nvars['x'], nvars['y'] = n.mesh_info.get_nodes_xy()
-    nvars['lon'], nvars['lat'] = n.mesh_info.mapping(nvars['x'], nvars['y'], inverse=True)
-
-    nvars['i'] = n.mesh_info.get_indices() - 1
+    nvars['x'] = n.mesh_info.nodes_x
+    nvars['y'] = n.mesh_info.nodes_y
+    nvars['lon'], nvars['lat'] = n.mesh_info.projection.pyproj(nvars['x'], nvars['y'], inverse=True)
+    nvars['i'] = n.mesh_info.indices
     mvt = n.get_var('M_VT')
     nvars['u'], nvars['v'] = mvt[:n.num_nodes], mvt[n.num_nodes:]
 
@@ -41,10 +41,12 @@ def read_file_save_velocity(ifile1, timedelta=dt.timedelta(1)):
         'field_%sZ.bin' % date2.strftime('%Y%m%dT%H%M%S'))
     n2 = NextsimBin(ifile2)
 
-    x1, y1 = n1.mesh_info.get_nodes_xy()
+    x1 = n1.mesh_info.nodes_x
+    t1 = n1.mesh_info.nodes_t
     i1 = n1.mesh_info.get_var('id')
 
-    x2, y2 = n2.mesh_info.get_nodes_xy()
+    x2 = n2.mesh_info.nodes_x
+    t2 = n2.mesh_info.nodes_t
     i2 = n2.mesh_info.get_var('id')
 
     # indices of nodes common to 0 and 1
@@ -73,16 +75,18 @@ def read_file_save_velocity(ifile1, timedelta=dt.timedelta(1)):
         os.path.split(ifile1)[1].replace('.bin', '_vel.npz')), **nvars)
 
 
-idir = '/Data/nextsimf/forecasts/Arctic5km_forecast'
-idates = range(20190101, 20190115)
+idir = '/data2/antonk/music/sa05free_2006'
+idates = range(20070101, 20070110)
 
-ifiles = []
-for idate in idates:
- ifiles += sorted(glob.glob(os.path.join(idir, str(idate), 'field_2*.bin')))[:4]
+ifiles = sorted(glob.glob(os.path.join(idir, f'field_2007010*.bin')))
 
-p = Pool(1)
-#p.map(read_file_save, ifiles)
-p.map(read_file_save_velocity, ifiles)
+print(len(ifiles), ifiles[0], ifiles[-1])
+
+read_file_save(ifiles[0])
+
+#with Pool(5) as p:
+#    p.map(read_file_save, ifiles)
+#    p.map(read_file_save_velocity, ifiles)
 
 # subset
 #ex = n['x'][n['i']]
