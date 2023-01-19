@@ -1,8 +1,13 @@
+from matplotlib.tri import Triangulation, LinearTriInterpolator
 import numpy as np
 from scipy.ndimage import zoom, median_filter, gaussian_filter, distance_transform_edt, minimum_filter
 from scipy.interpolate import griddata
-from matplotlib.tri import Triangulation, LinearTriInterpolator
+from scipy.signal import convolve2d
+from sklearn.feature_extraction.image import img_to_graph
+from sklearn.cluster import AgglomerativeClustering
+
 from stereoid.sea_ice import RadarModel
+
 
 def read_nextsim_data(filename, proj, lon_0=0):
     """
@@ -333,3 +338,174 @@ def apply_anisotropic_diffusion(img, gamma=0.25, step=(1., 1.), ploton=False, ka
             # sleep(0.01)
 
     return imgout
+
+def conv2_mk(x, y, mode='same'): # this makes it the same as matlab
+    return np.rot90(convolve2d(np.rot90(x, 2), np.rot90(y, 2), mode=mode), 2)
+
+def convolution_filter_mk(vf, size1=15, size2=16):
+    shp=vf.shape
+    # discontinuities using a n x m filter
+    Sv1=np.ones(vf.shape)
+    Sv2=np.ones(vf.shape)
+    for i in range(size1,size2,2):
+        n=int(i)
+        m=int(i)
+
+        # filter
+        f1=np.vstack((np.ones((n,m)), -1*np.ones((n,m))))/n/m/2
+        f2=np.column_stack((-1*np.ones((m,n)), np.ones((m,n))))/n/m/2
+        vf1=(conv2_mk(vf,f1,'same'))
+        vf2=(conv2_mk(vf,f2,'same'))
+        Sv1=Sv1*vf1
+        Sv2=Sv2*vf2
+    Sv=np.sqrt(Sv1**2+Sv2**2)
+    return Sv, Sv1, Sv2
+
+def get_edges_mk(S, thr):
+    shp = S.shape
+    min_width=3
+    max_width=100
+    Iy=[]
+    Ix=[]
+    # go through columns
+    for i in range(0,shp[1]):
+        Id=np.where(np.log(np.absolute(S[:,i]))>thr)
+        if len(Id[0]) > 1:
+            dId=Id[0][1:]-Id[0][:-1]
+            I1=np.where(dId > 1)
+            I1=np.append(0,I1[0]+1)
+            I2=np.append(I1[1:],len(Id[0]))
+            for k in range(0,len(I1)):
+                if Id[0][I2[k]-1]-Id[0][I1[k]] > min_width-1:
+                    if Id[0][I2[k]-1]-Id[0][I1[k]] < max_width+1:
+                        #I_in=Id[0][I1[k]:I2[k]]
+                        #I_out=np.argmax(np.absolute(S[I_in,i]))
+                        #Iy=np.append(Iy,I_in[I_out])
+                        Iy=np.append(Iy,int(np.mean(Id[0][I1[k]:I2[k]])))
+                        Ix=np.append(Ix,i)
+    # go through rows
+    for i in range(0,shp[0]):
+        Id=np.where(np.log(np.absolute(S[i,:]))>thr)
+        if len(Id[0]) > 1:
+            dId=Id[0][1:]-Id[0][:-1]
+            I1=np.where(dId > 1)
+            I1=np.append(0,I1[0]+1)
+            I2=np.append(I1[1:],len(Id[0]))
+            for k in range(0,len(I1)):
+                if Id[0][I2[k]-1]-Id[0][I1[k]] > min_width-1:
+                    if Id[0][I2[k]-1]-Id[0][I1[k]] < max_width+1:
+                        #I_in=Id[0][I1[k]:I2[k]]
+                        #I_out=np.argmax(np.absolute(S[i,I_in]))
+                        #Ix=np.append(Ix,I_in[I_out])
+                        Ix=np.append(Ix,int(np.mean(Id[0][I1[k]:I2[k]])))
+                        Iy=np.append(Iy,i)
+    return Ix,Iy
+
+def get_edges_x_y_mk(uf, vf, size1=15, size2=16, thr=-4.5):
+    Su, Su1, Su2 = convolution_filter_mk(uf, size1, size2)
+    Sv, Sv1, Sv2 = convolution_filter_mk(vf, size1, size2)
+    X=[]
+    Y=[]
+    St=np.maximum(np.maximum(np.maximum(np.absolute(Su1),np.absolute(Su2)),np.absolute(Sv1)),np.absolute(Sv2))
+    Ix,Iy=get_edges_mk(Su,thr)
+    X=np.append(X,Ix)
+    Y=np.append(Y,Iy)
+    Ix,Iy=get_edges_mk(Sv,thr)
+    X=np.append(X,Ix)
+    Y=np.append(Y,Iy)
+    return X, Y
+
+def morph_operators_mk(vf, X, Y, n=10):
+    BW=np.zeros(vf.shape)
+    BW[Y.astype(int),X.astype(int)]=1
+    BW[0:n,:]=0;BW[:,0:n]=0
+    BW[-n-1:,:]=0;BW[:,-n-1:]=0
+    props=regionprops_table(BW.astype(int))
+    F=np.array([[0,0,1,0,0],[0,1,1,1,0],[1,1,1,1,1],[0,1,1,1,0],[0,0,1,0,0]])
+    F=np.array([[1,1,1],[1,1,1],[1,1,1]])
+    F=np.array([[0,1,0],[1,1,1],[0,1,0]])
+    BW2=morphology.binary_dilation(BW,F)
+    #threshold=filters.threshold_otsu(BW2)
+    #mask = BW2 > threshold
+    BW2 = morphology.remove_small_objects(BW2, 50, connectivity=8)
+    #BW2=BW2*mask
+    BW3=morphology.binary_erosion(BW2,F)
+    # Create Matrix
+    ColNrs, RowNrs = np.where(BW3 > 0.5)
+    return ColNrs, RowNrs
+
+def get_deformation_components_mk(u, v, ColNrs, RowNrs, n=5, m=5):
+    fx=np.vstack((np.ones((n,m)), np.zeros((1,m)), -np.ones((n,m))))/n/m # note: u --> along-track, so x --> along-track, so is 'y-axis'
+    fy=np.column_stack((np.ones((m,n)), np.zeros((n,1)), -np.ones((m,n))))/n/m
+    fm=np.ones(fx.shape)/m/n;
+
+    # first remove mean everywhere
+    vm=v*1.0#-sp.signal.convolve2d(v,fm,'same');
+    um=u*1.0#-sp.signal.convolve2d(u,fm,'same');
+    DVDX=(conv2_mk(vm,fx,'same'))#/res*1000;
+    DVDY=(conv2_mk(vm,fy,'same'))#/res*1000;
+    DUDX=(conv2_mk(um,fx,'same'))#/res*1000;
+    DUDY=(conv2_mk(um,fy,'same'))#/res*1000;
+    # only the identified locations
+    F=np.zeros(DUDX.shape);
+    l=0;
+    for i in range(0,len(ColNrs)):
+        F[ColNrs[i]-l:ColNrs[i]+l+1,RowNrs[i]-l:RowNrs[i]+l+1]=1;
+    #F[0:n,:]=0;F[:,0:n]=0
+    #F[-n-1:,:]=0;F[:,-n-1:]=0
+    DUDY=DUDY*F;
+    DUDX=DUDX*F;
+    DVDY=DVDY*F;
+    DVDX=DVDX*F;
+    DI=DUDX+DVDY;
+    SH=(DVDX**2+DUDY**2)**0.5;
+
+    return F, DI, SH
+
+def label_average(img, labels, xy_interpolation=True):
+    avg = np.zeros_like(img)
+    ygrd, xgrd = np.mgrid[0:img.shape[0], 0:img.shape[1]]
+    
+    for l in np.unique(labels):
+        gpi = labels == l
+        if gpi[gpi].size < 10 or not xy_interpolation:
+            avg[gpi] = img[gpi].mean()
+            continue
+        x_l0 = xgrd[gpi]
+        y_l0 = ygrd[gpi]
+        i_l0 = img[gpi]
+        xx = np.vstack([np.ones_like(x_l0), x_l0, y_l0]).T
+        bb = np.linalg.lstsq(xx, i_l0[None].T, rcond=None)[0]
+        i_l0_r = np.dot(xx, bb)
+        avg[gpi] = i_l0_r.flat        
+    return avg
+
+def clustering_filter(u3, v3, n_clusters=20, med_filt_size=5, xy_interpolation=True):
+    #u3, v3 = [zoomout(i, stp) for i in [uf, vf]]
+    features = np.vstack([i.flatten() for i in [u3, v3]]).T
+    connectivity = img_to_graph(u3)
+    n_clusters_tot = int(n_clusters/1000*u3.shape[0])
+    print('n_clusters_tot', n_clusters_tot)
+    ward = AgglomerativeClustering(n_clusters=n_clusters_tot, linkage="ward", connectivity=connectivity)
+    ward.fit(features)
+    labels = ward.labels_.reshape(u3.shape)
+    labelsf = median_filter(labels, med_filt_size)
+    u4, v4 = [label_average(a, labelsf, xy_interpolation=xy_interpolation) for a in [u3, v3]]
+    return u4, v4
+
+def multi_look(inp, stp):
+    return median_filter(inp, stp)[::stp, ::stp]
+
+def get_deformation(u, v, use_diff=True):
+    if use_diff:
+        dudy = np.diff(u, axis=0)[:, :-1]
+        dudx = np.diff(u, axis=1)[:-1, :]
+        dvdy = np.diff(v, axis=0)[:, :-1]
+        dvdx = np.diff(v, axis=1)[:-1, :]
+    else:
+        dudy, dudx = np.gradient(u)
+        dvdy, dvdx = np.gradient(v)
+    div = dudx + dvdy
+    she = np.hypot(dudx - dvdy, dudy + dvdx)
+    tot = np.hypot(div, she)
+    return div, she, tot
