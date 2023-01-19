@@ -10,10 +10,11 @@ import numpy as np
 
 from pynextsim import NextsimBin
 
-odir = '/data1/antonk/harmony'
-
 def read_file_save(ifile):
-    print(ifile)
+    ofile = ifile.replace('.bin', '.npz')
+    if os.path.exists(ofile):
+        return
+    print(ifile, ofile)
     nvars = {}
     n = NextsimBin(ifile)
 
@@ -22,14 +23,13 @@ def read_file_save(ifile):
     nvars['lon'], nvars['lat'] = n.mesh_info.projection.pyproj(nvars['x'], nvars['y'], inverse=True)
     nvars['i'] = n.mesh_info.indices
     mvt = n.get_var('M_VT')
-    nvars['u'], nvars['v'] = mvt[:n.num_nodes], mvt[n.num_nodes:]
+    num_nodes = nvars['x'].size
+    nvars['u'], nvars['v'] = mvt[:num_nodes], mvt[num_nodes:]
 
-    for varname in ['Concentration', 'Thickness', 'Ridge_ratio']:
+    for varname in ['Concentration', 'Thickness']:
         nvars[varname] = n.get_var(varname)
 
-    np.savez(os.path.join(
-        odir,
-        os.path.split(ifile)[1].replace('.bin', '.npz')), **nvars)
+    np.savez(ofile, **nvars)
 
 def read_file_save_velocity(ifile1, timedelta=dt.timedelta(1)):
     print(ifile1)
@@ -70,22 +70,20 @@ def read_file_save_velocity(ifile1, timedelta=dt.timedelta(1)):
         u=u,
         v=v)
     nvars['lon'], nvars['lat'] = n1.mesh_info.mapping(nvars['x'], nvars['y'], inverse=True)
-    np.savez(os.path.join(
-        odir,
-        os.path.split(ifile1)[1].replace('.bin', '_vel.npz')), **nvars)
+    ofile = ifile1.replace('.bin', '_vel.npz')
+    np.savez(ofile, **nvars)
 
 
-idir = '/data2/antonk/music/sa05free_2006'
-idates = range(20070101, 20070110)
+idir = '/data2/antonk/harmony/exp_00*'
 
-ifiles = sorted(glob.glob(os.path.join(idir, f'field_2007010*.bin')))
+ifiles = sorted(glob.glob(f'{idir}/field_2007010[1-5]*.bin'))
 
 print(len(ifiles), ifiles[0], ifiles[-1])
 
-read_file_save(ifiles[0])
+#read_file_save(ifiles[0])
 
-#with Pool(5) as p:
-#    p.map(read_file_save, ifiles)
+with Pool(5) as p:
+    p.map(read_file_save, ifiles)
 #    p.map(read_file_save_velocity, ifiles)
 
 # subset
