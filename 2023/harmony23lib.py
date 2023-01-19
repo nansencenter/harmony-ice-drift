@@ -3,6 +3,8 @@ import numpy as np
 from scipy.ndimage import zoom, median_filter, gaussian_filter, distance_transform_edt, minimum_filter
 from scipy.interpolate import griddata
 from scipy.signal import convolve2d
+from skimage.measure import regionprops_table
+from skimage import morphology
 from sklearn.feature_extraction.image import img_to_graph
 from sklearn.cluster import AgglomerativeClustering
 
