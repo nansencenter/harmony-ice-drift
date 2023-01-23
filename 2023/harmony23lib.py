@@ -511,3 +511,18 @@ def get_deformation(u, v, use_diff=True):
     she = np.hypot(dudx - dvdy, dudy + dvdx)
     tot = np.hypot(div, she)
     return div, she, tot
+
+def get_chunks(landmask, icemask, min_size=500):
+    mask = minimum_filter(icemask.data, 10)
+    mask[landmask] = True
+    mask_azi_vec = mask.max(axis=1).astype(int)
+    ch_starts = np.where(np.diff(mask_azi_vec) < 0)[0]+1
+    ch_stops = np.where(np.diff(mask_azi_vec) > 0)[0]
+    
+    if mask_azi_vec[0] == 0:
+        ch_starts = np.hstack([0, ch_starts])
+    if mask_azi_vec[-1] == 0:
+        ch_stops = np.hstack([ch_stops, mask_azi_vec.size-1])
+    
+    ch_sizes = ch_stops - ch_starts
+    return ch_starts[ch_sizes > min_size], ch_stops[ch_sizes > min_size], ch_sizes[ch_sizes > min_size]

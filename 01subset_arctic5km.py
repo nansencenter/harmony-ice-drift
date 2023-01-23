@@ -74,9 +74,9 @@ def read_file_save_velocity(ifile1, timedelta=dt.timedelta(1)):
     np.savez(ofile, **nvars)
 
 
-idir = '/data2/antonk/harmony/exp_00*'
+idir = '/data2/antonk/harmony/sa05free*'
 
-ifiles = sorted(glob.glob(f'{idir}/field_2007010[1-5]*.bin'))
+ifiles = sorted(glob.glob(f'{idir}/field_*.bin'))
 
 print(len(ifiles), ifiles[0], ifiles[-1])
 
