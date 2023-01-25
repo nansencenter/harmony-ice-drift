@@ -1,14 +1,22 @@
+from multiprocessing import Pool
+
+import cartopy.crs as ccrs
+from cartopy.feature import LAND, COASTLINE
+import matplotlib.pyplot as plt
 from matplotlib.tri import Triangulation, LinearTriInterpolator
 import numpy as np
 from scipy.ndimage import zoom, median_filter, gaussian_filter, distance_transform_edt, minimum_filter
 from scipy.interpolate import griddata
 from scipy.signal import convolve2d
+from scipy.spatial import cKDTree
 from skimage.measure import regionprops_table
 from skimage import morphology
 from sklearn.feature_extraction.image import img_to_graph
 from sklearn.cluster import AgglomerativeClustering
 
 from stereoid.sea_ice import RadarModel
+
+GLOBAL_DATA = None
 
 
 def read_nextsim_data(filename, proj, lon_0=0):
@@ -526,3 +534,70 @@ def get_chunks(landmask, icemask, min_size=500):
     
     ch_sizes = ch_stops - ch_starts
     return ch_starts[ch_sizes > min_size], ch_stops[ch_sizes > min_size], ch_sizes[ch_sizes > min_size]
+
+def get_projected_swath(ifile):
+    xgrd = GLOBAL_DATA['xgrd']
+    ygrd = GLOBAL_DATA['ygrd']
+    ename = GLOBAL_DATA['ename']
+    
+    ds0 = np.load(ifile)
+    x = ds0['x']
+    y = ds0['y']
+    
+    defor_ifile = ifile.replace('.npz', '_defor.npz')        
+    ds1 = np.load(defor_ifile)
+    ti = ds1[f'{ename}i']
+    tm = ds1[f'{ename}m']
+    tc = ds1[f'{ename}c']
+    stp = ds1['stp']
+    x = x[::stp, ::stp]
+    y = y[::stp, ::stp]
+    tm = tm[::stp, ::stp]
+    
+    # shrink size to the smallest
+    min_shape = [min(i.shape[j] for i in [x, ti, tm, tc]) for j in [0,1]]
+    x, y, ti, tm, tc  = [i[:min_shape[0], :min_shape[1]] for i in [x, y, ti, tm, tc]]
+
+    tree = cKDTree(np.vstack([x.flatten(), y.flatten()]).T)
+    d, inds = tree.query(np.vstack([xgrd.flatten(), ygrd.flatten()]).T, k = 4)
+    w = 1.0 / d**2
+
+    wsum = np.sum(w, axis=1)
+    tidw = []
+    for t in [ti, tm, tc]:
+        tt = np.sum(w * t.flatten()[inds], axis=1) / wsum
+        tt[d[:,0]>10000] = np.nan
+        tt.shape = xgrd.shape
+        tidw.append(tt)
+    return tidw
+
+def get_deformation_mosaic(ifiles, xlim, ylim, cores=10, ename='tot'):
+    global GLOBAL_DATA
+    GLOBAL_DATA = {}
+    GLOBAL_DATA['xgrd'], GLOBAL_DATA['ygrd'] = np.meshgrid(np.arange(*xlim), np.arange(*ylim))
+    GLOBAL_DATA['ename'] = ename
+
+    with Pool(cores) as p:
+        tot_pro_all = p.map(get_projected_swath, ifiles)
+
+    tot_pro_avg = []
+    for i in range(len(tot_pro_all[0])):
+        tot_pro = np.nanmean(np.dstack([t[i] for t in tot_pro_all]), axis=2)
+        tot_pro_avg.append(tot_pro)
+    return tot_pro_avg
+
+def make_three_maps(pro_avg, xlim, ylim, cmap, clim):
+    srs_dst = ccrs.NorthPolarStereo(central_longitude=0, true_scale_latitude=60)
+    map_extent = [xlim[0], xlim[1], ylim[0], ylim[1]]
+    idx = [0,1, 2]
+
+    fig, axs = plt.subplots(1,3, figsize=(15,5), subplot_kw={'projection': srs_dst})
+    for i in range(3):
+        imsh=axs[i].imshow(pro_avg[i], extent=[xlim[0], xlim[1], ylim[1], ylim[0]], cmap=cmap, clim=clim)
+        axs[i].add_feature(LAND)
+        axs[i].add_feature(COASTLINE)
+        axs[i].set_extent(map_extent, crs=srs_dst)
+        axs[i].plot(0, 0, 'bo')
+        axs[i].text(30000, -30000, 'North \nPole')
+    plt.tight_layout()
+    plt.show()
