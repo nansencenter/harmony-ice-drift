@@ -573,7 +573,6 @@ def get_projected_swath(ifile):
     stp = ds1['stp']
     x = x[::stp, ::stp]
     y = y[::stp, ::stp]
-    tm = tm[::stp, ::stp]
     
     # shrink size to the smallest
     min_shape = [min(i.shape[j] for i in [x, ti, tm, tc]) for j in [0,1]]
@@ -618,7 +617,6 @@ def make_three_maps(pro_avg, xlim, ylim, cmap, clim):
         axs[i].add_feature(LAND)
         axs[i].add_feature(COASTLINE)
         axs[i].set_extent(map_extent, crs=srs_dst)
-        axs[i].plot(0, 0, 'bo')
-        axs[i].text(30000, -30000, 'North \nPole')
+        axs[i].plot(0, 0, 'b.')
     plt.tight_layout()
     plt.show()
