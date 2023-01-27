@@ -467,10 +467,31 @@ def get_deformation_components_mk(u, v, ColNrs, RowNrs, n=5, m=5):
     DUDX=DUDX*F;
     DVDY=DVDY*F;
     DVDX=DVDX*F;
-    DI=DUDX+DVDY;
+    DI=DVDX+DUDY;
     SH=(DVDX**2+DUDY**2)**0.5;
+    return DI, SH
 
-    return F, DI, SH
+def get_deformaion_from_uv_mk(u, v, size1=15, size2=16, thr=-5):
+    X, Y = get_edges_x_y_mk(u, v, size1=size1, size2=size2, thr=thr)
+    ColNrs, RowNrs = morph_operators_mk(u, X, Y)
+    div, she  = get_deformation_components_mk(u, v, ColNrs, RowNrs)
+    tot = np.hypot(div, she)
+    return div, she, tot
+
+def get_edges_x_y_mk2(a, gf_size, threshold):
+    af = gaussian_filter(a, gf_size)    
+    ag = np.hypot(*np.gradient(af))
+    return get_edges_mk(ag, threshold)
+
+def get_deformaion_from_uv_mk2(u, v, stp=2, u_gf_size=5, v_gf_size=6, u_threshold=-7.3, v_threshold=-7.1):
+    uz = multi_look(u, stp)
+    vz = multi_look(v, stp)
+    ux, uy = get_edges_x_y_mk2(uz, u_gf_size, u_threshold)
+    vx, vy = get_edges_x_y_mk2(vz, v_gf_size, v_threshold)
+    cols, rows = morph_operators_mk(uz, np.hstack([ux, vx]), np.hstack([uy, vy]))
+    div, she  = get_deformation_components_mk(uz, vz, cols, rows)
+    tot = np.hypot(div, she)
+    return div, she, tot
 
 def label_average(img, labels, xy_interpolation=True):
     avg = np.zeros_like(img)
