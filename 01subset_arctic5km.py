@@ -1,4 +1,5 @@
 import os
+user = os.getenv('USER')
 import glob
 import time
 import datetime as dt
@@ -74,7 +75,7 @@ def read_file_save_velocity(ifile1, timedelta=dt.timedelta(1)):
     np.savez(ofile, **nvars)
 
 
-idir = '/data2/antonk/harmony/sa05free*'
+idir = f'/data2/{user}/harmony/sa05free_2019*'
 
 ifiles = sorted(glob.glob(f'{idir}/field_*.bin'))
 
