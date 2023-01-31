@@ -1,7 +1,5 @@
 from multiprocessing import Pool
 
-import cartopy.crs as ccrs
-from cartopy.feature import LAND, COASTLINE
 import matplotlib.pyplot as plt
 from matplotlib.tri import Triangulation, LinearTriInterpolator
 import numpy as np
@@ -605,18 +603,3 @@ def get_deformation_mosaic(ifiles, xlim, ylim, cores=10, ename='tot'):
         tot_pro = np.nanmean(np.dstack([t[i] for t in tot_pro_all]), axis=2)
         tot_pro_avg.append(tot_pro)
     return tot_pro_avg
-
-def make_three_maps(pro_avg, xlim, ylim, cmap, clim):
-    srs_dst = ccrs.NorthPolarStereo(central_longitude=0, true_scale_latitude=60)
-    map_extent = [xlim[0], xlim[1], ylim[0], ylim[1]]
-    idx = [0,1, 2]
-
-    fig, axs = plt.subplots(1,3, figsize=(15,5), subplot_kw={'projection': srs_dst})
-    for i in range(3):
-        imsh=axs[i].imshow(pro_avg[i], extent=[xlim[0], xlim[1], ylim[1], ylim[0]], cmap=cmap, clim=clim)
-        axs[i].add_feature(LAND)
-        axs[i].add_feature(COASTLINE)
-        axs[i].set_extent(map_extent, crs=srs_dst)
-        axs[i].plot(0, 0, 'b.')
-    plt.tight_layout()
-    plt.show()
